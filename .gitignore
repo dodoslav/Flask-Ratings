@@ -1,6 +1,7 @@
 env/
 *.py[co]
-
+*.swp
+credentials.py
 # Packages
 *.egg
 *.egg-info

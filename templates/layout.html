@@ -31,15 +31,24 @@
             <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
               <ul class="nav navbar-nav">
                   <li class="active"><a href="/">Home</a></li>
-                  <li><a href="/sign_up">Sign up</a></li>
-                  <li><a href="/login">Login</a></li>
                   <li><a href="/movie_list">Movie List</a></li>
                   <li><a href="/user_movie_rating/1">Test Edit</a></li>
               </ul>
+              <ul class="nav navbar-nav navbar-right">
+
+                  {% if user_id == None %}
+                    <li><a href="{{ url_for('login') }}">Login</a></li>
+                  {% else %}
+                    <li><a href="{{ url_for('logout') }}">Logout</a></li>
+                    <li><a href="#">{{ user_id}}</a></li>
+                  {% endif %}                  
+              </ul>
             </div><!-- /.navbar-collapse -->
+
           </div><!-- /.container-fluid -->
         </nav>
         <div class="container">
+
             {% block body %} {% endblock %}    
         </div>
     </body>

@@ -1,70 +1,94 @@
+# -*- coding: utf-8 -*-
 from flask import Flask, render_template, redirect, request, url_for, escape, session
+from flask_oauth import OAuth
 import model
+from credentials import Credentials
+import json
+GOOGLE_CLIENT_ID = Credentials.google_id 
+GOOGLE_CLIENT_SECRET = Credentials.google_secret 
+REDIRECT_URI = '/oauth2callback'  # one of the Redirect URIs from Google APIs console
+
+SECRET_KEY = Credentials.secret_key
+DEBUG = True 
 
 app = Flask(__name__)
 
+app.debug = DEBUG
+app.secret_key = SECRET_KEY
+oauth = OAuth()
+
+google = oauth.remote_app('google',
+                          base_url='https://www.google.com/accounts/',
+                          authorize_url='https://accounts.google.com/o/oauth2/auth',
+                          request_token_url=None,
+                          request_token_params={'scope': 'https://www.googleapis.com/auth/userinfo.email',
+                                                'response_type': 'code'},
+                          access_token_url='https://accounts.google.com/o/oauth2/token',
+                          access_token_method='POST',
+                          access_token_params={'grant_type': 'authorization_code'},
+                          consumer_key=GOOGLE_CLIENT_ID,
+                          consumer_secret=GOOGLE_CLIENT_SECRET)
+
 @app.route("/")
 def index():
-	user_id = session.get("user_id", None)
-	user_list = model.session.query(model.User).limit(5).all()
-	return render_template("user_list.html", users=user_list, user_id=user_id)
-
-# createa a new user (signup)
-@app.route("/sign_up")
-def sign_up():
-	
-	return render_template("sign_up.html")
-
-@app.route("/create_user", methods=["POST"])
-def create_user():
-	#get user name
-	email = request.form['email']
-	#get user password
-	password = request.form['password']
-	#get age & zipcode
-	age = request.form['age']
-	zipcode = request.form['zipcode']
-
-	#create query
-	user = model.User(email = email, password = password, age = age, zipcode= zipcode)
-	#add the object to a session
-	model.session.add(user)
-    #commit session
-	model.session.commit()
-	return redirect("/")
+	user_id = session.get("email", None)
+	#user_list = model.session.query(model.User).limit(5).all()
+	#return render_template("user_list.html", users=user_list, user_id=user_id)
+	return render_template("user_list.html", user_id=user_id)
 
 # login as a user 	
 @app.route("/login")
 def login():
-	return render_template("login.html")
+    callback=url_for('authorized', _external=True)
+    return google.authorize(callback=callback)
 
-@app.route('/logout')
+@app.route("/logout")
 def logout():
     # remove the username from the session if it's there
-    session.pop('user_id', None)
+    session.pop('id', None)
+    session.pop('email', None)
+    session.pop('access_token', None)
     return redirect(url_for('index'))
 
-# authenticate user	
-@app.route("/authenticate", methods=["POST"])
-def authenticate():
-	email = request.form['email']
-	password = request.form['password']
-	# capture the userid information from model-database
-	user_query = model.session.query(model.User).filter_by(email=email,password=password)
-	if user_query.first():
-		user = user_query.first()
-		# after getting the session variable back, you have to point it to a page
-		session['user_id'] = user.id
-		return redirect("/")
-	else:
-		flash = "Try again!"
-		return redirect("/login")
-
-
-# view a list of users
-@app.route("/users")
-def users():
-	pass
+@app.route(REDIRECT_URI)
+@google.authorized_handler
+def authorized(resp):
+    access_token = resp['access_token']
+    
+    ####################
+    #access_token = session.get('access_token')
+    #if access_token is None:
+    #    return redirect(url_for('login'))
+ 
+    #access_token = access_token[0]
+    from urllib2 import Request, urlopen, URLError
+ 
+    headers = {'Authorization': 'OAuth '+access_token}
+    req = Request('https://www.googleapis.com/oauth2/v1/userinfo',
+                  None, headers)
+    res = ''
+    try:
+        res = urlopen(req)
+    except URLError, e:
+        if e.code == 401:
+            # Unauthorized - bad token
+            session.pop('access_token', None)
+            return redirect(url_for('login'))
+        
+    data = json.loads(res.read())
+        #return res.read()
+ 
+    #return res.read()
+    #############
+    session['access_token'] = access_token
+    #session['name'] = data["name"].decode("windows-1252").encode("utf8")
+    session['email'] = data["email"]
+    session['id'] = data["id"]
+    return redirect(url_for('index'))
+ 
+@google.tokengetter
+def get_access_token():
+    return session.get('access_token')
 
 #click on a user and view list of movies they've rated and their ratings
 @app.route("/user_ratings_list/<int:id>", methods=["GET"])
@@ -81,7 +105,8 @@ def user_movie_rating(movie_id, user_id):
 
 @app.route("/rate_movie", methods=["POST"])
 def rate_movie():
-	#get user id
+	
+    #get user id
 	user_id = request.form['user_id']
 	#get movie id
 	movie_id = request.form['movie_id']
@@ -101,7 +126,8 @@ def rate_movie():
 @app.route("/movie_list")
 def movie_list():
 	movie_list_query = model.session.query(model.Movie).all()
-	return render_template("movie_list.html", movie_list = movie_list_query)
+	user_id = session.get("email", None)
+	return render_template("movie_list.html", movie_list = movie_list_query, user_id=user_id)
 
 
 @app.route("/movie/<int:id>/", methods=["GET"])
@@ -162,7 +188,7 @@ def view_movie(id):
 
 
 # set the secret key.  keep this really secret:
-app.secret_key = 'banana banana banana'
+app.secret_key = Credentials.secret_token
 
 if __name__ == "__main__":
 	app.run(debug = True)
